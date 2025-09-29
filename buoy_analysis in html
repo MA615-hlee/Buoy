@@ -1,0 +1,196 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Buoy_Hyungu Lee — Source Code</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; line-height: 1.55; margin: 2rem auto; max-width: 980px; padding: 0 1rem; }
+  h1,h2,h3 { line-height: 1.25; }
+  .blk { margin: 1.25rem 0; }
+  pre { background: #0f172a; color: #e2e8f0; padding: 1rem; border-radius: 10px; overflow-x: auto; }
+  code { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; }
+  .note { background: #eef2ff; border-left: 4px solid #6366f1; padding: .75rem 1rem; border-radius: 8px; }
+</style>
+</head>
+<body>
+<h1>Buoy_Hyungu Lee — Source Code (R / Quarto)</h1>
+
+<p class="note">
+This HTML is a <strong>code container</strong>. Copy/paste into a <code>.qmd</code> or R script to run.
+</p>
+
+<div class="blk">
+<h2>YAML header</h2>
+<pre><code>---
+title: "Buoy_Hyungu Lee"
+format: pdf
+editor: visual
+---</code></pre>
+</div>
+
+<div class="blk">
+<h2>Packages</h2>
+<pre><code>## Packages to Install
+
+```{r, warning = FALSE, message=FALSE}
+library(data.table)
+library(dplyr)
+library(lubridate)
+library(ggplot2)
+library(zoo)
+library(tibble)
+library(readr)
+```</code></pre>
+</div>
+
+<div class="blk">
+<h2>Getting Buoy Data</h2>
+<pre><code>```{r, warning=FALSE, message=FALSE}
+file_root &lt;- "https://www.ndbc.noaa.gov/view_text_file.php?filename=44013h"
+tail &lt;- ".txt.gz&amp;dir=data/historical/stdmet/"
+
+load_buoy_data1 &lt;- function(year) {
+  path &lt;- paste0(file_root, year, tail)
+  
+  if (year &lt; 2007) {
+    header &lt;- scan(path, what = 'character', nlines = 1)
+    buoy &lt;- read.table(path, fill = TRUE, header = TRUE, sep = "")
+    buoy &lt;- add_column(buoy, mm = NA, .after = "hh")
+    buoy &lt;- add_column(buoy, TIDE = NA, .after = "VIS")
+  } else {
+    header &lt;- scan(path, what = 'character', nlines = 1)  
+    buoy &lt;- fread(path, header = FALSE, skip = 1, fill = TRUE)
+    setnames(buoy, header)
+  }
+}
+
+all_data1 &lt;- lapply(1985:2024, load_buoy_data1)
+combined_data1 &lt;- rbindlist(all_data1, fill = TRUE)
+```</code></pre>
+</div>
+
+<div class="blk">
+<h2>Second loader</h2>
+<pre><code>```{r}
+load_buoy_data &lt;- function(year) {
+  path &lt;- paste0(file_root, year, tail)
+
+  header &lt;- scan(path, what = 'character', nlines = 1)
+  num_columns &lt;- length(header)  
+
+  if (num_columns == 16) {
+    buoy &lt;- read.table(path, fill = TRUE, header = TRUE, sep = "")
+    buoy &lt;- add_column(buoy, mm = NA, .after = "hh")
+    buoy &lt;- add_column(buoy, TIDE = NA, .after = "VIS")
+
+  } else if (num_columns == 17) {
+    buoy &lt;- read.table(path, fill = TRUE, header = TRUE, sep = "")
+    buoy &lt;- add_column(buoy, TIDE = NA, .after = "VIS")
+
+  } else {
+    buoy &lt;- fread(path, header = FALSE, skip = 1, fill = TRUE)
+    setnames(buoy, header)
+  }
+  return(buoy)
+}
+all_data &lt;- lapply(1985:2024, load_buoy_data)
+combined_data &lt;- rbindlist(all_data, fill = TRUE)
+```</code></pre>
+</div>
+
+<div class="blk">
+<h2>Cleaning combined_data1</h2>
+<pre><code>```{r}
+combined_data1 &lt;- combined_data1 %&gt;%
+  mutate(
+    YY = as.character(YY),
+    `#YY` = as.character(`#YY`),
+    YYYY = as.character(YYYY)
+  ) %&gt;%
+  mutate(YYYY = coalesce(YYYY, `#YY`, YY)) %&gt;%
+  mutate(BAR = coalesce(as.numeric(BAR), as.numeric(PRES)),
+         WD = coalesce(as.numeric(WD), as.numeric(WDIR))) %&gt;%
+  select(-TIDE, -TIDE.1, -mm, -WDIR, -PRES, -`#YY`, -YY)
+
+combined_data1$datetime &lt;- ymd_h(paste(combined_data1$YYYY, combined_data1$MM,
+                                       combined_data1$DD, combined_data1$hh, sep = "-"))
+
+combined_data1 &lt;- combined_data1 %&gt;%
+  mutate(across(everything(), 
+                ~ na_if(as.numeric(as.character(.)), 99) %&gt;% na_if(999) %&gt;% na_if(9999)))
+
+if (!inherits(combined_data1$datetime, "POSIXct")) {
+  combined_data1$datetime &lt;- ymd_h(paste(combined_data1$YYYY, combined_data1$MM,
+                                         combined_data1$DD, combined_data1$hh, sep = "-"))
+}
+```</code></pre>
+</div>
+
+<div class="blk">
+<h2>Compiling all years</h2>
+<pre><code>## Compiling all years' data
+
+1.  Try to remember why 2007 is the split year
+2.  Why are we using different functions pre/post 2007?
+3.  What new functions did you learn? What do they do?
+```</code></pre>
+</div>
+
+<div class="blk">
+<h2>Cleaning and plotting</h2>
+<pre><code>```{r}
+combined_data &lt;- combined_data %&gt;%
+  mutate(
+    YY = as.character(YY),
+    `#YY` = as.character(`#YY`),
+    YYYY = as.character(YYYY)
+  ) %&gt;%
+  mutate(YYYY = coalesce(YYYY, `#YY`, YY)) %&gt;%
+  mutate(BAR = coalesce(as.numeric(BAR), as.numeric(PRES)),
+         WD = coalesce(as.numeric(WD), as.numeric(WDIR))) %&gt;%
+  select(-TIDE, -TIDE.1, -mm, -WDIR, -PRES, -`#YY`, -YY)
+
+combined_data$datetime &lt;- ymd_h(paste(combined_data$YYYY, combined_data$MM,
+                                      combined_data$DD, combined_data$hh, sep = "-"))
+
+combined_data &lt;- combined_data %&gt;%
+  mutate(across(everything(),
+                ~ na_if(as.numeric(as.character(.)), 99) %&gt;% na_if(999) %&gt;% na_if(9999)))
+
+if (!inherits(combined_data$datetime, "POSIXct")) {
+  combined_data$datetime &lt;- ymd_h(paste(combined_data$YYYY, combined_data$MM,
+                                        combined_data$DD, combined_data$hh, sep = "-"))
+}
+
+combined_data &lt;- combined_data %&gt;%
+  mutate(Year = year(datetime),
+         Month = month(datetime),
+         Day = day(datetime),
+         Hour = hour(datetime))
+
+plot1_avg_wind_speed &lt;- ggplot(yearly_wind_analysis, aes(x = Year, y = avg_wspd)) +
+  geom_line(color = "navy", size = 1) +
+  geom_point(color = "navy") +
+  labs(
+    title = "Annual Average Wind Speed (WSPD) Trend",
+    x = "Year",
+    y = "Average Wind Speed (m/s)"
+  ) +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+print(plot1_avg_wind_speed)
+```</code></pre>
+
+<p><strong>Observations:</strong></p>
+<ul>
+  <li>Significant year-to-year variability.</li>
+  <li>No clear long-term trend.</li>
+  <li>High wind speeds around 1990, 2010, 2020.</li>
+  <li>Low wind speeds after 2020 and around 2000.</li>
+</ul>
+</div>
+
+</body>
+</html>
